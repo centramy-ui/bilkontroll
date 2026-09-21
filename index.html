@@ -198,6 +198,37 @@
         </div>
         <div class="photo-labels"><span>Vänster sida</span><span>Höger sida</span></div>
       </div>
+
+      <div class="field">
+        <label>Är bilen skadad eller har något hänt?</label>
+        <div class="shift-toggle" id="incident-toggle">
+          <button type="button" id="incident-no" data-val="no" class="sel">Nej</button>
+          <button type="button" id="incident-yes" data-val="yes">Ja</button>
+        </div>
+      </div>
+
+      <div id="incident-details" style="display:none;">
+        <div class="field">
+          <label>Foto på skadan</label>
+          <div style="display:flex; gap:12px; align-items:center;">
+            <button type="button" class="ghost-btn" id="incident-photo-btn" style="margin-top:0; flex:1;">Ta foto på skadan</button>
+            <div id="incident-photo-preview" style="display:none; width:56px; height:56px; border-radius:10px; overflow:hidden; border:1px solid var(--border); flex-shrink:0;">
+              <img id="incident-photo-img" style="width:100%; height:100%; object-fit:cover;">
+            </div>
+          </div>
+          <input type="file" id="file-incident" accept="image/*" capture="environment">
+        </div>
+        <div class="field">
+          <label>Beskriv vad som hänt</label>
+          <input type="text" id="incident-message" placeholder="Beskriv skadan eller händelsen">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Meddelande (valfritt)</label>
+        <input type="text" id="note-input" placeholder="T.ex. bilen behöver tvättas eller service">
+      </div>
+
       <input type="file" id="file-fram" accept="image/*" capture="environment">
       <input type="file" id="file-bak" accept="image/*" capture="environment">
       <input type="file" id="file-vanster" accept="image/*" capture="environment">
@@ -391,6 +422,7 @@ async function loadCarsForStaff(){
 
 // ---------- Staff: new check ----------
 let state = {car:'', shift:null, photos:{}};
+let incidentState = {happened:false, photo:null, message:''};
 document.getElementById('car-select').onchange = (e) => { state.car = e.target.value; updateSubmitState(); };
 
 const shiftStart = document.getElementById('shift-start'), shiftEnd = document.getElementById('shift-end');
@@ -438,8 +470,34 @@ function compressImage(file, callback){
 
 function updateSubmitState(){
   const allPhotos = DIRS.every(d => state.photos[d]);
-  document.getElementById('submit-btn').disabled = !(state.car && state.shift && allPhotos);
+  const incidentOk = !incidentState.happened || (incidentState.photo && incidentState.message.trim());
+  document.getElementById('submit-btn').disabled = !(state.car && state.shift && allPhotos && incidentOk);
 }
+
+// ---------- Incident / damage ----------
+const incidentNo = document.getElementById('incident-no'), incidentYes = document.getElementById('incident-yes');
+const incidentDetails = document.getElementById('incident-details');
+[incidentNo, incidentYes].forEach(btn => {
+  btn.onclick = () => {
+    incidentState.happened = (btn.dataset.val === 'yes');
+    incidentNo.classList.toggle('sel', !incidentState.happened);
+    incidentYes.classList.toggle('sel', incidentState.happened);
+    incidentDetails.style.display = incidentState.happened ? 'block' : 'none';
+    updateSubmitState();
+  };
+});
+document.getElementById('incident-photo-btn').onclick = () => document.getElementById('file-incident').click();
+document.getElementById('file-incident').onchange = (e) => {
+  const file = e.target.files[0]; if(!file) return;
+  compressImage(file, (dataUrl) => {
+    incidentState.photo = dataUrl;
+    const preview = document.getElementById('incident-photo-preview');
+    preview.style.display = 'block';
+    document.getElementById('incident-photo-img').src = dataUrl;
+    updateSubmitState();
+  });
+};
+document.getElementById('incident-message').oninput = (e) => { incidentState.message = e.target.value; updateSubmitState(); };
 
 document.getElementById('submit-btn').onclick = async () => {
   const btn = document.getElementById('submit-btn');
@@ -454,7 +512,11 @@ document.getElementById('submit-btn').onclick = async () => {
       car: state.car,
       shift: state.shift,
       timestamp: new Date().toISOString(),
-      photos: state.photos
+      photos: state.photos,
+      incidentReported: incidentState.happened,
+      incidentPhoto: incidentState.happened ? incidentState.photo : null,
+      incidentMessage: incidentState.happened ? incidentState.message.trim() : null,
+      note: document.getElementById('note-input').value.trim() || null
     });
     statusMsg.textContent = 'Kontrollen är sparad ✓'; statusMsg.classList.add('ok');
     resetForm();
@@ -472,6 +534,13 @@ function resetForm(){
     h.innerHTML = '<span>'+(dir==='vanster'?'V':dir==='hoger'?'H':dir.toUpperCase())+'</span>';
   });
   shiftStart.classList.remove('sel'); shiftEnd.classList.remove('sel');
+  incidentState = {happened:false, photo:null, message:''};
+  incidentNo.classList.add('sel'); incidentYes.classList.remove('sel');
+  incidentDetails.style.display = 'none';
+  document.getElementById('incident-photo-preview').style.display = 'none';
+  document.getElementById('incident-message').value = '';
+  document.getElementById('file-incident').value = '';
+  document.getElementById('note-input').value = '';
   document.getElementById('submit-btn').disabled = true;
 }
 
@@ -493,6 +562,20 @@ function renderEntries(snap, container){
     const div = document.createElement('div'); div.className = 'entry';
     const d = new Date(e.timestamp);
     const dateStr = d.toLocaleDateString('sv-SE') + ' ' + d.toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'});
+    let extra = '';
+    if(e.incidentReported){
+      extra += `<div style="margin-top:12px; padding:10px 12px; border-radius:10px; background:#3A2018; border:1px solid #6B2E20;">
+        <div style="color:var(--danger); font-weight:700; font-size:12.5px;">⚠ Skada/olycka rapporterad</div>
+        <div style="font-size:13px; color:var(--text); margin-top:4px;">${escapeHtml(e.incidentMessage || '')}</div>
+        ${e.incidentPhoto ? `<img src="${e.incidentPhoto}" style="width:100%; max-width:160px; border-radius:8px; margin-top:8px; display:block;">` : ''}
+      </div>`;
+    }
+    if(e.note){
+      extra += `<div style="margin-top:10px; padding:10px 12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--border);">
+        <div style="font-size:12px; color:var(--text-muted);">Meddelande</div>
+        <div style="font-size:13px; color:var(--text); margin-top:2px;">${escapeHtml(e.note)}</div>
+      </div>`;
+    }
     div.innerHTML = `
       <div class="entry-top">
         <div>
@@ -504,6 +587,7 @@ function renderEntries(snap, container){
       <div class="entry-photos">
         ${DIRS.map(d2 => `<img src="${e.photos[d2]}" loading="lazy">`).join('')}
       </div>
+      ${extra}
     `;
     container.appendChild(div);
   });
