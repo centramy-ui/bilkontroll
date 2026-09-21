@@ -303,6 +303,7 @@ const firebaseConfig = {
 // =====================================================================
 
 const DIRS = ['fram','bak','vanster','hoger'];
+const RETENTION_DAYS = 90;
 let db;
 let configOk = firebaseConfig.apiKey !== "YOUR_API_KEY";
 
@@ -327,6 +328,7 @@ function showScreen(id){
 
 function goToApp(){
   if(!session){ showScreen('screen-login'); return; }
+  cleanupOldEntries();
   if(session.role === 'admin'){
     document.getElementById('header-sub').textContent = 'Admin';
     showScreen('screen-admin');
@@ -554,7 +556,7 @@ async function loadMyHistory(){
   }catch(e){ list.innerHTML = '<div class="empty">Kunde inte ladda historik.</div>'; }
 }
 
-function renderEntries(snap, container){
+function renderEntries(snap, container, allowDelete){
   if(snap.empty){ container.innerHTML = '<div class="empty">Inga kontroller ännu.</div>'; return; }
   container.innerHTML = '';
   snap.forEach(doc => {
@@ -588,12 +590,31 @@ function renderEntries(snap, container){
         ${DIRS.map(d2 => `<img src="${e.photos[d2]}" loading="lazy">`).join('')}
       </div>
       ${extra}
+      ${allowDelete ? '<div class="entry-actions"><button>Ta bort</button></div>' : ''}
     `;
+    if(allowDelete){
+      div.querySelector('.entry-actions button').onclick = async () => {
+        if(!confirm('Ta bort den här kontrollen permanent?')) return;
+        try{ await doc.ref.delete(); div.remove(); }catch(e2){ alert('Kunde inte ta bort.'); }
+      };
+    }
     container.appendChild(div);
   });
 }
 
 function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+// ---------- Automatic cleanup of old entries ----------
+async function cleanupOldEntries(){
+  try{
+    const cutoff = new Date(Date.now() - RETENTION_DAYS*24*60*60*1000).toISOString();
+    const snap = await db.collection('entries').where('timestamp','<',cutoff).limit(400).get();
+    if(snap.empty) return;
+    const batch = db.batch();
+    snap.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }catch(e){ console.warn('Automatisk rensning misslyckades', e); }
+}
 
 // ---------- Admin: tabs ----------
 const adminTabs = ['review','staff','cars','settings'];
@@ -640,9 +661,9 @@ async function loadReview(){
     const snap = await query.get();
     if(carFilter){
       const filtered = snap.docs.filter(d => d.data().car === carFilter);
-      renderEntries({empty: filtered.length===0, forEach: (fn) => filtered.forEach(fn)}, list);
+      renderEntries({empty: filtered.length===0, forEach: (fn) => filtered.forEach(fn)}, list, true);
     } else {
-      renderEntries(snap, list);
+      renderEntries(snap, list, true);
     }
   }catch(e){ console.error(e); list.innerHTML = '<div class="empty">Kunde inte ladda kontroller.</div>'; }
 }
