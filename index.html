@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Bilkontroll — Nattpatrullen</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0E1414">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bilkontroll">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Firebase (gratis backend) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#0E1414; --surface:#182222; --surface-2:#1F2B2B; --border:#2B3838;
+    --text:#EDEFEA; --text-muted:#8FA09D; --accent:#F2A93B; --accent-dim:#8A6421;
+    --ok:#4CAF7D; --ok-dim:#254234; --danger:#E4634F; --radius:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  body{font-family:'Inter',system-ui,sans-serif; min-height:100vh; padding-bottom:48px;}
+  h1,h2,h3{font-family:'Space Grotesk',system-ui,sans-serif;}
+
+  .setup-banner{
+    background:#3A2410; color:var(--accent); font-size:13px; padding:12px 20px; text-align:center;
+    border-bottom:1px solid var(--accent-dim); line-height:1.5;
+  }
+
+  header{padding:18px 20px 14px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg); z-index:20; display:flex; justify-content:space-between; align-items:center;}
+  header .title{font-size:19px; font-weight:600;}
+  header .subtitle{font-size:12px; color:var(--text-muted); margin-top:2px;}
+  header .logout{background:none; border:1px solid var(--border); color:var(--text-muted); font-size:12px; padding:7px 12px; border-radius:8px; font-family:'Inter';}
+
+  nav{display:flex; gap:6px; padding:14px 20px 0;}
+  nav button{flex:1; padding:10px 0; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-family:'Inter'; font-size:13.5px; font-weight:600;}
+  nav button.active{background:var(--surface-2); color:var(--text); border-color:var(--accent-dim);}
+
+  main{padding:20px; max-width:520px; margin:0 auto;}
+  .screen{display:none;}
+  .screen.active{display:block;}
+  section{display:none;}
+  section.active{display:block;}
+
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:13px; color:var(--text-muted); margin-bottom:6px;}
+  .field input[type=text], .field input[type=password], .field select{
+    width:100%; padding:13px 14px; border-radius:10px; border:1px solid var(--border);
+    background:var(--surface); color:var(--text); font-size:16px; font-family:'Inter'; appearance:none;
+  }
+  .field input:focus, .field select:focus{outline:none; border-color:var(--accent);}
+
+  .role-pick{display:flex; flex-direction:column; gap:12px; margin-top:60px;}
+  .role-pick button{
+    padding:22px 18px; border-radius:16px; border:1px solid var(--border); background:var(--surface);
+    color:var(--text); font-size:17px; font-weight:600; font-family:'Space Grotesk'; text-align:left;
+  }
+  .role-pick button span{display:block; font-size:12px; color:var(--text-muted); font-weight:400; font-family:'Inter'; margin-top:4px;}
+
+  .back-link{background:none; border:none; color:var(--text-muted); font-size:13px; padding:0 0 16px; font-family:'Inter';}
+
+  .primary-btn{width:100%; padding:15px 0; border-radius:12px; border:none; background:var(--accent); color:#1A1204; font-size:15px; font-weight:700; font-family:'Inter'; margin-top:6px;}
+  .primary-btn:disabled{background:var(--surface-2); color:var(--text-muted);}
+  .ghost-btn{width:100%; padding:13px 0; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:14px; font-family:'Inter'; margin-top:10px;}
+
+  .shift-toggle{display:flex; gap:8px; margin-top:6px;}
+  .shift-toggle button{flex:1; padding:13px 0; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-size:14px; font-weight:600; font-family:'Inter';}
+  .shift-toggle button.sel{background:var(--ok-dim); border-color:var(--ok); color:var(--ok);}
+
+  .car-diagram{position:relative; width:100%; max-width:260px; margin:6px auto 4px;}
+  .car-diagram svg{width:100%; display:block;}
+  .hotspot{position:absolute; width:50px; height:50px; border-radius:50%; border:2px dashed var(--border); display:flex; align-items:center; justify-content:center; background:rgba(24,34,34,0.85); transform:translate(-50%,-50%);}
+  .hotspot.done{border-style:solid; border-color:var(--ok); background:rgba(37,66,52,0.9);}
+  .hotspot span{font-size:10px; color:var(--text-muted); font-weight:600;}
+  .hotspot.done span{color:var(--ok);}
+  .hotspot .check{font-size:18px; color:var(--ok);}
+  .photo-labels{display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-top:10px; padding:0 6px;}
+
+  .status-msg{text-align:center; font-size:13px; color:var(--text-muted); margin-top:12px; min-height:16px;}
+  .status-msg.ok{color:var(--ok);} .status-msg.err{color:var(--danger);}
+
+  .entry{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; margin-bottom:10px;}
+  .entry-top{display:flex; justify-content:space-between; align-items:center;}
+  .entry-car{font-weight:700; font-size:15px;}
+  .entry-meta{font-size:12px; color:var(--text-muted); margin-top:2px;}
+  .entry-shift{font-size:11px; padding:4px 9px; border-radius:20px; font-weight:600;}
+  .entry-shift.start{background:var(--ok-dim); color:var(--ok);}
+  .entry-shift.end{background:#33261A; color:var(--accent);}
+  .entry-photos{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:12px;}
+  .entry-photos img{width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; border:1px solid var(--border);}
+  .empty{text-align:center; color:var(--text-muted); font-size:13px; padding:40px 20px;}
+
+  .list-row{display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; margin-bottom:8px;}
+  .list-row .name{font-weight:600; font-size:14px;}
+  .list-row .pin{font-size:12px; color:var(--text-muted); margin-top:2px;}
+  .list-row button{background:none; border:none; color:var(--danger); font-size:12px; font-family:'Inter';}
+
+  .add-form{display:flex; gap:8px; margin-top:14px;}
+  .add-form input{flex:1;}
+  .add-form button{padding:0 16px; border-radius:10px; border:1px solid var(--accent-dim); background:var(--surface-2); color:var(--accent); font-size:13px; font-weight:600; font-family:'Inter';}
+
+  .filter-row{display:flex; gap:8px; margin-bottom:14px;}
+  .filter-row select{flex:1; padding:10px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:13px;}
+
+  input[type=file]{display:none;}
+</style>
+</head>
+<body>
+
+<div id="setup-banner" class="setup-banner" style="display:none;">
+  ⚠️ Firebase-konfigurationen saknas i koden. Fyll i <code>firebaseConfig</code> högst upp i filen innan appen fungerar.
+</div>
+
+<header id="app-header" style="display:none;">
+  <div>
+    <div class="title">Bilkontroll</div>
+    <div class="subtitle" id="header-sub">Nattpatrullen</div>
+  </div>
+  <button class="logout" id="logout-btn">Logga ut</button>
+</header>
+
+<!-- LOGIN SCREEN -->
+<div class="screen active" id="screen-login">
+  <main>
+    <div id="login-role-pick" class="role-pick">
+      <button id="pick-staff">Personal<span>Logga in med namn och PIN-kod</span></button>
+      <button id="pick-admin">Admin<span>Granska kontroller, hantera personal och bilar</span></button>
+    </div>
+
+    <div id="login-staff-form" style="display:none;">
+      <button class="back-link" data-back>← Tillbaka</button>
+      <div class="field">
+        <label>Ditt namn</label>
+        <select id="staff-select"><option value="">Välj namn...</option></select>
+      </div>
+      <div class="field">
+        <label>PIN-kod</label>
+        <input type="password" id="staff-pin" inputmode="numeric" maxlength="4" placeholder="••••">
+      </div>
+      <button class="primary-btn" id="staff-login-btn">Logga in</button>
+      <div class="status-msg" id="staff-login-status"></div>
+    </div>
+
+    <div id="login-admin-form" style="display:none;">
+      <button class="back-link" data-back>← Tillbaka</button>
+      <div class="field">
+        <label>Admin-PIN</label>
+        <input type="password" id="admin-pin-input" inputmode="numeric" maxlength="6" placeholder="••••">
+      </div>
+      <button class="primary-btn" id="admin-login-btn">Logga in</button>
+      <div class="status-msg" id="admin-login-status"></div>
+    </div>
+  </main>
+</div>
+
+<!-- STAFF APP -->
+<div class="screen" id="screen-staff">
+  <nav>
+    <button id="tab-new" class="active">Ny kontroll</button>
+    <button id="tab-mine">Min historik</button>
+  </nav>
+  <main>
+    <section id="section-new" class="active">
+      <div class="field">
+        <label>Registreringsnummer</label>
+        <select id="car-select"><option value="">Välj bil...</option></select>
+      </div>
+      <div class="field">
+        <label>Skift</label>
+        <div class="shift-toggle">
+          <button id="shift-start" data-val="start">Skiftstart</button>
+          <button id="shift-end" data-val="end">Skiftslut</button>
+        </div>
+      </div>
+      <div class="field">
+        <label style="text-align:center; display:block;">Tryck på en punkt för att fotografera</label>
+        <div class="car-diagram">
+          <svg viewBox="0 0 200 340" fill="none">
+            <rect x="35" y="30" width="130" height="280" rx="34" stroke="#3A4747" stroke-width="2" fill="#141C1C"/>
+            <rect x="50" y="55" width="100" height="70" rx="10" stroke="#3A4747" stroke-width="1.5" fill="#0E1414"/>
+            <rect x="50" y="215" width="100" height="70" rx="10" stroke="#3A4747" stroke-width="1.5" fill="#0E1414"/>
+            <rect x="20" y="70" width="16" height="50" rx="6" fill="#0E1414" stroke="#3A4747"/>
+            <rect x="164" y="70" width="16" height="50" rx="6" fill="#0E1414" stroke="#3A4747"/>
+            <rect x="20" y="220" width="16" height="50" rx="6" fill="#0E1414" stroke="#3A4747"/>
+            <rect x="164" y="220" width="16" height="50" rx="6" fill="#0E1414" stroke="#3A4747"/>
+          </svg>
+          <div class="hotspot" id="hot-fram" style="left:50%; top:9%;"><span>FRAM</span></div>
+          <div class="hotspot" id="hot-bak" style="left:50%; top:91%;"><span>BAK</span></div>
+          <div class="hotspot" id="hot-vanster" style="left:6%; top:50%;"><span>V</span></div>
+          <div class="hotspot" id="hot-hoger" style="left:94%; top:50%;"><span>H</span></div>
+        </div>
+        <div class="photo-labels"><span>Vänster sida</span><span>Höger sida</span></div>
+      </div>
+      <input type="file" id="file-fram" accept="image/*" capture="environment">
+      <input type="file" id="file-bak" accept="image/*" capture="environment">
+      <input type="file" id="file-vanster" accept="image/*" capture="environment">
+      <input type="file" id="file-hoger" accept="image/*" capture="environment">
+      <button class="primary-btn" id="submit-btn" disabled>Spara kontroll</button>
+      <div class="status-msg" id="status-msg"></div>
+    </section>
+
+    <section id="section-mine">
+      <div id="mine-list"></div>
+    </section>
+  </main>
+</div>
+
+<!-- ADMIN APP -->
+<div class="screen" id="screen-admin">
+  <nav>
+    <button id="tab-review" class="active">Granska</button>
+    <button id="tab-staff">Personal</button>
+    <button id="tab-cars">Bilar</button>
+    <button id="tab-settings">Inställningar</button>
+  </nav>
+  <main>
+    <section id="section-review" class="active">
+      <div class="filter-row">
+        <select id="filter-staff"><option value="">Alla i personalen</option></select>
+        <select id="filter-car"><option value="">Alla bilar</option></select>
+      </div>
+      <div id="review-list"></div>
+    </section>
+
+    <section id="section-staff-mgmt">
+      <div id="staff-list"></div>
+      <div class="add-form">
+        <input type="text" id="new-staff-name" placeholder="Namn">
+        <input type="text" id="new-staff-pin" placeholder="PIN (4 siffror)" inputmode="numeric" maxlength="4" style="max-width:110px;">
+        <button id="add-staff-btn">Lägg till</button>
+      </div>
+    </section>
+
+    <section id="section-cars-mgmt">
+      <div id="cars-list"></div>
+      <div class="add-form">
+        <input type="text" id="new-car-reg" placeholder="Registreringsnummer">
+        <button id="add-car-btn">Lägg till</button>
+      </div>
+    </section>
+
+    <section id="section-settings">
+      <div class="field">
+        <label>Ändra admin-PIN</label>
+        <input type="password" id="new-admin-pin" inputmode="numeric" maxlength="6" placeholder="Ny PIN-kod">
+      </div>
+      <button class="primary-btn" id="save-admin-pin-btn">Spara ny PIN</button>
+      <div class="status-msg" id="settings-status"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+// =====================================================================
+// FYLL I DINA FIREBASE-UPPGIFTER HÄR (från Firebase Console > Project settings)
+// =====================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyBgs3Zde2di7EfnyF1kZ_0NP-nPDGrhidY",
+  authDomain: "fordonskontroll-5f110.firebaseapp.com",
+  projectId: "fordonskontroll-5f110",
+  storageBucket: "fordonskontroll-5f110.firebasestorage.app",
+  messagingSenderId: "247677755683",
+  appId: "1:247677755683:web:8b05363887deb098f02c96"
+};
+// =====================================================================
+
+const DIRS = ['fram','bak','vanster','hoger'];
+let db;
+let configOk = firebaseConfig.apiKey !== "YOUR_API_KEY";
+
+if(configOk){
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  document.getElementById('app-header').style.display = 'flex';
+} else {
+  document.getElementById('setup-banner').style.display = 'block';
+}
+
+let session = null; // {role:'staff', name} or {role:'admin'}
+try{
+  const saved = localStorage.getItem('bk-session');
+  if(saved) session = JSON.parse(saved);
+}catch(e){}
+
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function goToApp(){
+  if(!session){ showScreen('screen-login'); return; }
+  if(session.role === 'admin'){
+    document.getElementById('header-sub').textContent = 'Admin';
+    showScreen('screen-admin');
+    loadStaffOptions(); loadCarOptions(); loadReview();
+  } else {
+    document.getElementById('header-sub').textContent = session.name;
+    showScreen('screen-staff');
+    loadCarsForStaff();
+  }
+}
+
+// ---------- Login ----------
+document.getElementById('pick-staff').onclick = async () => {
+  document.getElementById('login-role-pick').style.display = 'none';
+  document.getElementById('login-staff-form').style.display = 'block';
+  const sel = document.getElementById('staff-select');
+  sel.innerHTML = '<option value="">Laddar...</option>';
+  try{
+    const snap = await db.collection('staff').orderBy('name').get();
+    sel.innerHTML = '<option value="">Välj namn...</option>';
+    snap.forEach(doc => {
+      const o = document.createElement('option');
+      o.value = doc.id; o.dataset.pin = doc.data().pin; o.textContent = doc.data().name;
+      sel.appendChild(o);
+    });
+  }catch(e){ sel.innerHTML = '<option value="">Kunde inte ladda personal</option>'; }
+};
+document.getElementById('pick-admin').onclick = () => {
+  document.getElementById('login-role-pick').style.display = 'none';
+  document.getElementById('login-admin-form').style.display = 'block';
+};
+document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => {
+  document.getElementById('login-staff-form').style.display = 'none';
+  document.getElementById('login-admin-form').style.display = 'none';
+  document.getElementById('login-role-pick').style.display = 'flex';
+});
+
+document.getElementById('staff-login-btn').onclick = () => {
+  const sel = document.getElementById('staff-select');
+  const opt = sel.options[sel.selectedIndex];
+  const pin = document.getElementById('staff-pin').value.trim();
+  const statusEl = document.getElementById('staff-login-status');
+  if(!sel.value || !pin){ statusEl.textContent = 'Välj namn och skriv PIN.'; statusEl.className='status-msg err'; return; }
+  if(opt.dataset.pin !== pin){ statusEl.textContent = 'Fel PIN-kod.'; statusEl.className='status-msg err'; return; }
+  session = {role:'staff', name: opt.textContent, staffId: sel.value};
+  localStorage.setItem('bk-session', JSON.stringify(session));
+  goToApp();
+};
+
+document.getElementById('admin-login-btn').onclick = async () => {
+  const pin = document.getElementById('admin-pin-input').value.trim();
+  const statusEl = document.getElementById('admin-login-status');
+  try{
+    const doc = await db.collection('config').doc('main').get();
+    let adminPin = '0000';
+    if(doc.exists && doc.data().adminPin) adminPin = doc.data().adminPin;
+    else await db.collection('config').doc('main').set({adminPin:'0000'}, {merge:true});
+    if(pin !== adminPin){ statusEl.textContent = 'Fel PIN-kod.'; statusEl.className='status-msg err'; return; }
+    session = {role:'admin'};
+    localStorage.setItem('bk-session', JSON.stringify(session));
+    goToApp();
+  }catch(e){ statusEl.textContent = 'Kunde inte logga in. Kontrollera anslutningen.'; statusEl.className='status-msg err'; }
+};
+
+document.getElementById('logout-btn').onclick = () => {
+  session = null;
+  localStorage.removeItem('bk-session');
+  document.getElementById('login-staff-form').style.display = 'none';
+  document.getElementById('login-admin-form').style.display = 'none';
+  document.getElementById('login-role-pick').style.display = 'flex';
+  showScreen('screen-login');
+};
+
+// ---------- Staff: tabs ----------
+const tabNew = document.getElementById('tab-new'), tabMine = document.getElementById('tab-mine');
+const sectionNew = document.getElementById('section-new'), sectionMine = document.getElementById('section-mine');
+tabNew.onclick = () => { tabNew.classList.add('active'); tabMine.classList.remove('active'); sectionNew.classList.add('active'); sectionMine.classList.remove('active'); };
+tabMine.onclick = () => { tabMine.classList.add('active'); tabNew.classList.remove('active'); sectionMine.classList.add('active'); sectionNew.classList.remove('active'); loadMyHistory(); };
+
+async function loadCarsForStaff(){
+  const sel = document.getElementById('car-select');
+  sel.innerHTML = '<option value="">Laddar...</option>';
+  try{
+    const snap = await db.collection('cars').orderBy('reg').get();
+    sel.innerHTML = '<option value="">Välj bil...</option>';
+    snap.forEach(doc => {
+      const o = document.createElement('option'); o.value = doc.data().reg; o.textContent = doc.data().reg;
+      sel.appendChild(o);
+    });
+    if(snap.empty) sel.innerHTML = '<option value="">Inga bilar tillagda än</option>';
+  }catch(e){ sel.innerHTML = '<option value="">Kunde inte ladda bilar</option>'; }
+}
+
+// ---------- Staff: new check ----------
+let state = {car:'', shift:null, photos:{}};
+document.getElementById('car-select').onchange = (e) => { state.car = e.target.value; updateSubmitState(); };
+
+const shiftStart = document.getElementById('shift-start'), shiftEnd = document.getElementById('shift-end');
+[shiftStart, shiftEnd].forEach(btn => {
+  btn.onclick = () => {
+    state.shift = btn.dataset.val;
+    shiftStart.classList.toggle('sel', state.shift==='start');
+    shiftEnd.classList.toggle('sel', state.shift==='end');
+    updateSubmitState();
+  };
+});
+
+DIRS.forEach(dir => {
+  const hotspot = document.getElementById('hot-'+dir);
+  const fileInput = document.getElementById('file-'+dir);
+  hotspot.onclick = () => fileInput.click();
+  fileInput.onchange = (e) => {
+    const file = e.target.files[0]; if(!file) return;
+    compressImage(file, (blob) => {
+      state.photos[dir] = blob;
+      hotspot.classList.add('done');
+      hotspot.innerHTML = '<span class="check">✓</span>';
+      updateSubmitState();
+    });
+  };
+});
+
+function compressImage(file, callback){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 700;
+      let w = img.width, h = img.height;
+      if(w > h && w > maxDim){ h = h*(maxDim/w); w = maxDim; } else if(h > maxDim){ w = w*(maxDim/h); h = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      callback(canvas.toDataURL('image/jpeg', 0.5));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function updateSubmitState(){
+  const allPhotos = DIRS.every(d => state.photos[d]);
+  document.getElementById('submit-btn').disabled = !(state.car && state.shift && allPhotos);
+}
+
+document.getElementById('submit-btn').onclick = async () => {
+  const btn = document.getElementById('submit-btn');
+  const statusMsg = document.getElementById('status-msg');
+  btn.disabled = true; statusMsg.textContent = 'Sparar...'; statusMsg.className='status-msg';
+
+  try{
+    const entryRef = db.collection('entries').doc();
+    await entryRef.set({
+      staffName: session.name,
+      staffId: session.staffId,
+      car: state.car,
+      shift: state.shift,
+      timestamp: new Date().toISOString(),
+      photos: state.photos
+    });
+    statusMsg.textContent = 'Kontrollen är sparad ✓'; statusMsg.classList.add('ok');
+    resetForm();
+  }catch(e){
+    console.error(e);
+    statusMsg.textContent = 'Något gick fel. Försök igen.'; statusMsg.classList.add('err');
+  }finally{ updateSubmitState(); }
+};
+
+function resetForm(){
+  state.photos = {}; state.shift = null;
+  DIRS.forEach(dir => {
+    const h = document.getElementById('hot-'+dir);
+    h.classList.remove('done');
+    h.innerHTML = '<span>'+(dir==='vanster'?'V':dir==='hoger'?'H':dir.toUpperCase())+'</span>';
+  });
+  shiftStart.classList.remove('sel'); shiftEnd.classList.remove('sel');
+  document.getElementById('submit-btn').disabled = true;
+}
+
+// ---------- Staff: my history ----------
+async function loadMyHistory(){
+  const list = document.getElementById('mine-list');
+  list.innerHTML = '<div class="empty">Laddar...</div>';
+  try{
+    const snap = await db.collection('entries').where('staffId','==',session.staffId).orderBy('timestamp','desc').limit(30).get();
+    renderEntries(snap, list);
+  }catch(e){ list.innerHTML = '<div class="empty">Kunde inte ladda historik.</div>'; }
+}
+
+function renderEntries(snap, container){
+  if(snap.empty){ container.innerHTML = '<div class="empty">Inga kontroller ännu.</div>'; return; }
+  container.innerHTML = '';
+  snap.forEach(doc => {
+    const e = doc.data();
+    const div = document.createElement('div'); div.className = 'entry';
+    const d = new Date(e.timestamp);
+    const dateStr = d.toLocaleDateString('sv-SE') + ' ' + d.toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'});
+    div.innerHTML = `
+      <div class="entry-top">
+        <div>
+          <div class="entry-car">${escapeHtml(e.car)} ${e.staffName ? '· '+escapeHtml(e.staffName) : ''}</div>
+          <div class="entry-meta">${dateStr}</div>
+        </div>
+        <div class="entry-shift ${e.shift==='start'?'start':'end'}">${e.shift==='start'?'Skiftstart':'Skiftslut'}</div>
+      </div>
+      <div class="entry-photos">
+        ${DIRS.map(d2 => `<img src="${e.photos[d2]}" loading="lazy">`).join('')}
+      </div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+// ---------- Admin: tabs ----------
+const adminTabs = ['review','staff','cars','settings'];
+adminTabs.forEach(t => {
+  document.getElementById('tab-'+t).onclick = () => {
+    adminTabs.forEach(t2 => {
+      document.getElementById('tab-'+t2).classList.toggle('active', t2===t);
+      document.getElementById('section-'+(t2==='review'?'review':t2==='staff'?'staff-mgmt':t2==='cars'?'cars-mgmt':'settings')).classList.toggle('active', t2===t);
+    });
+    if(t==='review') loadReview();
+    if(t==='staff') loadStaffMgmt();
+    if(t==='cars') loadCarsMgmt();
+  };
+});
+
+// ---------- Admin: review ----------
+async function loadStaffOptions(){
+  const sel = document.getElementById('filter-staff');
+  try{
+    const snap = await db.collection('staff').orderBy('name').get();
+    sel.innerHTML = '<option value="">Alla i personalen</option>';
+    snap.forEach(doc => { const o = document.createElement('option'); o.value = doc.data().name; o.textContent = doc.data().name; sel.appendChild(o); });
+  }catch(e){}
+}
+async function loadCarOptions(){
+  const sel = document.getElementById('filter-car');
+  try{
+    const snap = await db.collection('cars').orderBy('reg').get();
+    sel.innerHTML = '<option value="">Alla bilar</option>';
+    snap.forEach(doc => { const o = document.createElement('option'); o.value = doc.data().reg; o.textContent = doc.data().reg; sel.appendChild(o); });
+  }catch(e){}
+}
+document.getElementById('filter-staff').onchange = loadReview;
+document.getElementById('filter-car').onchange = loadReview;
+
+async function loadReview(){
+  const list = document.getElementById('review-list');
+  list.innerHTML = '<div class="empty">Laddar...</div>';
+  const staffFilter = document.getElementById('filter-staff').value;
+  const carFilter = document.getElementById('filter-car').value;
+  try{
+    let query = db.collection('entries').orderBy('timestamp','desc').limit(50);
+    if(staffFilter) query = db.collection('entries').where('staffName','==',staffFilter).orderBy('timestamp','desc').limit(50);
+    const snap = await query.get();
+    if(carFilter){
+      const filtered = snap.docs.filter(d => d.data().car === carFilter);
+      renderEntries({empty: filtered.length===0, forEach: (fn) => filtered.forEach(fn)}, list);
+    } else {
+      renderEntries(snap, list);
+    }
+  }catch(e){ console.error(e); list.innerHTML = '<div class="empty">Kunde inte ladda kontroller.</div>'; }
+}
+
+// ---------- Admin: staff management ----------
+async function loadStaffMgmt(){
+  const list = document.getElementById('staff-list');
+  list.innerHTML = '<div class="empty">Laddar...</div>';
+  try{
+    const snap = await db.collection('staff').orderBy('name').get();
+    if(snap.empty){ list.innerHTML = '<div class="empty">Ingen personal tillagd än.</div>'; return; }
+    list.innerHTML = '';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const row = document.createElement('div'); row.className = 'list-row';
+      row.innerHTML = `<div><div class="name">${escapeHtml(d.name)}</div><div class="pin">PIN: ${escapeHtml(d.pin)}</div></div><button>Ta bort</button>`;
+      row.querySelector('button').onclick = async () => { await db.collection('staff').doc(doc.id).delete(); loadStaffMgmt(); };
+      list.appendChild(row);
+    });
+  }catch(e){ list.innerHTML = '<div class="empty">Kunde inte ladda personal.</div>'; }
+}
+document.getElementById('add-staff-btn').onclick = async () => {
+  const name = document.getElementById('new-staff-name').value.trim();
+  const pin = document.getElementById('new-staff-pin').value.trim();
+  if(!name || !/^\d{4}$/.test(pin)){ alert('Skriv namn och en 4-siffrig PIN-kod.'); return; }
+  await db.collection('staff').add({name, pin});
+  document.getElementById('new-staff-name').value = '';
+  document.getElementById('new-staff-pin').value = '';
+  loadStaffMgmt();
+};
+
+// ---------- Admin: car management ----------
+async function loadCarsMgmt(){
+  const list = document.getElementById('cars-list');
+  list.innerHTML = '<div class="empty">Laddar...</div>';
+  try{
+    const snap = await db.collection('cars').orderBy('reg').get();
+    if(snap.empty){ list.innerHTML = '<div class="empty">Inga bilar tillagda än.</div>'; return; }
+    list.innerHTML = '';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const row = document.createElement('div'); row.className = 'list-row';
+      row.innerHTML = `<div class="name">${escapeHtml(d.reg)}</div><button>Ta bort</button>`;
+      row.querySelector('button').onclick = async () => { await db.collection('cars').doc(doc.id).delete(); loadCarsMgmt(); };
+      list.appendChild(row);
+    });
+  }catch(e){ list.innerHTML = '<div class="empty">Kunde inte ladda bilar.</div>'; }
+}
+document.getElementById('add-car-btn').onclick = async () => {
+  const reg = document.getElementById('new-car-reg').value.trim();
+  if(!reg){ return; }
+  await db.collection('cars').add({reg});
+  document.getElementById('new-car-reg').value = '';
+  loadCarsMgmt();
+};
+
+// ---------- Admin: settings ----------
+document.getElementById('save-admin-pin-btn').onclick = async () => {
+  const pin = document.getElementById('new-admin-pin').value.trim();
+  const statusEl = document.getElementById('settings-status');
+  if(!/^\d{4,6}$/.test(pin)){ statusEl.textContent = 'Skriv en PIN-kod på 4–6 siffror.'; statusEl.className='status-msg err'; return; }
+  try{
+    await db.collection('config').doc('main').set({adminPin: pin}, {merge:true});
+    statusEl.textContent = 'Ny PIN sparad ✓'; statusEl.className='status-msg ok';
+    document.getElementById('new-admin-pin').value = '';
+  }catch(e){ statusEl.textContent = 'Kunde inte spara.'; statusEl.className='status-msg err'; }
+};
+
+// ---------- Init ----------
+if(configOk) goToApp();
+
+// ---------- Install as app (PWA) ----------
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(e => console.warn('SW-registrering misslyckades', e));
+  });
+}
+</script>
+
+</body>
+</html>
